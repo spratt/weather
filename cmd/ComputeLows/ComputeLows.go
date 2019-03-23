@@ -3,11 +3,21 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
+	"gonum.org/v1/plot/vg"
+)
+
+const (
+	PlotFile   = "weather.png"
+	PlotWidth  = 16*vg.Inch
+	PlotHeight = 8*vg.Inch
 )
 
 type DailyTemp struct {
@@ -49,12 +59,99 @@ func Cleanup(f string) string {
 	return strings.Trim(f, " ")
 }
 
+type TemperatureTicks struct{}
+func (TemperatureTicks) Ticks(min, max float64) []plot.Tick {
+	return []plot.Tick{
+		plot.Tick{
+			Value: min,
+			Label: fmt.Sprintf("%.1f", min),
+		},
+		plot.Tick{
+			Value: -10.0,
+			Label: "-10",
+		},
+		plot.Tick{
+			Value: 0.0,
+			Label: "0",
+		},
+		plot.Tick{
+			Value: 10.0,
+			Label: "10",
+		},
+		plot.Tick{
+			Value: 20.0,
+			Label: "20",
+		},
+		plot.Tick{
+			Value: 30.0,
+			Label: "30",
+		},
+		plot.Tick{
+			Value: max,
+			Label: fmt.Sprintf("%.1f", max),
+		},
+	}
+}
+
+type MonthTicks struct{}
+func (MonthTicks) Ticks(_, _ float64) []plot.Tick {
+	return []plot.Tick{
+		plot.Tick{
+			Value: 0.0,
+			Label: "January",
+		},
+		plot.Tick{
+			Value: 32.0,
+			Label: "February",
+		},
+		plot.Tick{
+			Value: 60.0,
+			Label: "March",
+		},
+		plot.Tick{
+			Value: 91.0,
+			Label: "April",
+		},
+		plot.Tick{
+			Value: 121.0,
+			Label: "May",
+		},
+		plot.Tick{
+			Value: 152.0,
+			Label: "June",
+		},
+		plot.Tick{
+			Value: 182.0,
+			Label: "July",
+		},
+		plot.Tick{
+			Value: 213.0,
+			Label: "August",
+		},
+		plot.Tick{
+			Value: 244.0,
+			Label: "September",
+		},
+		plot.Tick{
+			Value: 274.0,
+			Label: "October",
+		},
+		plot.Tick{
+			Value: 305.0,
+			Label: "November",
+		},
+		plot.Tick{
+			Value: 335.0,
+			Label: "December",
+		},
+	}
+}
+
 func main() {
 	dailyTemps := [][]DailyTemp{}
 	filenames := os.Args[1:]
 	for _, filename := range filenames {
 		dailyTemps = append(dailyTemps, []DailyTemp{})
-		fmt.Println(filename)
 		file, err := os.Open(filename)
 		check(err)
 		reader := csv.NewReader(file)
@@ -117,35 +214,56 @@ func main() {
 			}
 		}
 	}
+	yearlyHighs := make(plotter.XYs, 366)
+	yearlyLows := make(plotter.XYs, 366)
 	for _, yearlyTemps := range dailyTemps {
-		year := yearlyTemps[0].When.Year()
-		var (
-			yearlyLow float64 = math.Inf(+1.0)
-			yearlyHigh float64 = math.Inf(-1.0)
-			
-			start time.Time
-			count = 0
-			runs = []time.Time{}
-		)
-		for _, dailyTemp := range yearlyTemps {
-			if dailyTemp.Low < yearlyLow {
-				yearlyLow = dailyTemp.Low
-			}
-			if dailyTemp.High > yearlyHigh {
-				yearlyHigh = dailyTemp.High
-			}
-			if dailyTemp.High < 7 {
-				if count > 90 {
-					runs = append(runs, start)
-				}
-				count = 0
+		for j, dailyTemp := range yearlyTemps {
+			if yearlyHighs[j].X == 0 {
+				yearlyHighs[j].X = float64(j)
+				yearlyLows[j].X = float64(j)
+				yearlyHighs[j].Y = dailyTemp.High
+				yearlyLows[j].Y = dailyTemp.Low
 			} else {
-				if count == 0 {
-					start = dailyTemp.When
-				}
-				count++
+				// Note that we're using a recent-biased average here,
+				// which is lazy but may also be more interesting than
+				// an evenly-weighted average because we care more
+				// about how the temperatures have been recently.
+				yearlyHighs[j].Y += dailyTemp.High
+				yearlyHighs[j].Y /= 2
+				yearlyLows[j].Y += dailyTemp.Low
+				yearlyLows[j].Y /= 2
 			}
 		}
-		fmt.Printf("%d,%f,%f,%+v\n", year, yearlyLow, yearlyHigh, runs)
+	}
+
+	// Plot
+	{
+		p, err := plot.New()
+		check(err)
+
+		p.Title.Text = "Waterloo Temperature"
+		p.X.Label.Text = "Day"
+		p.Y.Label.Text = "Temperature (Celsius)"
+		p.X.Tick.Marker = MonthTicks{}
+		p.Y.Tick.Marker = TemperatureTicks{}
+
+		check(plotutil.AddLinePoints(p,
+			"High", yearlyHighs,
+			"Low", yearlyLows,
+		))
+		// Add a horizontal lines to demarcate 7 & 10 degrees
+		for i, v := range []int{7, 10} {
+			points := make(plotter.XYs, 366)
+			for j := 0; j < 366; j++ {
+				points[j].X = float64(j)
+				points[j].Y = float64(v)
+			}
+			l, err := plotter.NewLine(points)
+			check(err)
+			l.LineStyle.Color = plotutil.SoftColors[i + 2]
+			p.Add(l)
+			p.Legend.Add(strconv.Itoa(v), l)
+		}
+		check(p.Save(PlotWidth, PlotHeight, PlotFile))
 	}
 }
