@@ -17,3 +17,5 @@ Instructions
 
     $ make && ./ComputeLows data/*.csv && open weather.png
     go build ./...
+
+![A plot of the temperature in Waterloo](https://raw.githubusercontent.com/spratt/weather/master/weather.png)
