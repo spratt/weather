@@ -1,4 +1,4 @@
-BINS := ComputeLows
+BINS := PlotAverageTemperature
 
 all:
 	go build ./...
