@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,9 +16,10 @@ import (
 )
 
 const (
-	PlotFile   = "weather.png"
-	PlotWidth  = 16*vg.Inch
-	PlotHeight = 8*vg.Inch
+	PlotFile    = "weather.png"
+	PlotWidth   = 16*vg.Inch
+	PlotHeight  = 8*vg.Inch
+	DaysInAYear = 366
 )
 
 type DailyTemp struct {
@@ -214,8 +216,10 @@ func main() {
 			}
 		}
 	}
-	yearlyHighs := make(plotter.XYs, 366)
-	yearlyLows := make(plotter.XYs, 366)
+
+	// Compute the averages
+	yearlyHighs := make(plotter.XYs, DaysInAYear)
+	yearlyLows := make(plotter.XYs, DaysInAYear)
 	for _, yearlyTemps := range dailyTemps {
 		for j, dailyTemp := range yearlyTemps {
 			if yearlyHighs[j].X == 0 {
@@ -236,6 +240,62 @@ func main() {
 		}
 	}
 
+	// Find the longest string of days during which the high/low is at least 7
+	type DayCount struct {
+		Day int
+		Count int
+	}
+	LowAboveCounts := []DayCount{}
+	LowCurrentCount := DayCount{
+		Day: -1,
+	}
+	HighAboveCounts := []DayCount{}
+	HighCurrentCount := DayCount{
+		Day: -1,
+	}
+	maxTemp := -999.0
+	minTemp := 999.0
+	for i := 0; i < DaysInAYear; i++ {
+		if yearlyHighs[i].Y > maxTemp {
+			maxTemp = yearlyHighs[i].Y
+		}
+		if yearlyLows[i].Y < minTemp {
+			minTemp = yearlyLows[i].Y
+		}
+		if yearlyHighs[i].Y >= 7.0 {
+			if HighCurrentCount.Day == -1 {
+				HighCurrentCount = DayCount{
+					Day: i,
+					Count: 0,
+				}
+			}
+			HighCurrentCount.Count++
+		} else if HighCurrentCount.Day > -1 {
+			HighAboveCounts = append(HighAboveCounts, HighCurrentCount)
+			HighCurrentCount.Day = -1
+		}
+		if yearlyLows[i].Y >= 7.0 {
+			if LowCurrentCount.Day == -1 {
+				LowCurrentCount = DayCount{
+					Day: i,
+					Count: 0,
+				}
+			}
+			LowCurrentCount.Count++
+		} else if LowCurrentCount.Day > -1 {
+			LowAboveCounts = append(LowAboveCounts, LowCurrentCount)
+			LowCurrentCount.Day = -1
+		}
+	}
+	sort.Slice(HighAboveCounts, func(i, j int) bool {
+		return HighAboveCounts[i].Count > HighAboveCounts[j].Count
+	})
+	sort.Slice(LowAboveCounts, func(i, j int) bool {
+		return LowAboveCounts[i].Count > LowAboveCounts[j].Count
+	})
+	firstHighDay := ParseYearDay("2019", HighAboveCounts[0].Day)
+	firstLowDay := ParseYearDay("2019", LowAboveCounts[0].Day)
+
 	// Plot
 	{
 		p, err := plot.New()
@@ -250,20 +310,37 @@ func main() {
 		check(plotutil.AddLinePoints(p,
 			"High", yearlyHighs,
 			"Low", yearlyLows,
+			"7", plotter.XYs{
+				plotter.XY{
+					X: 0.0,
+					Y: 7.0,
+				},
+				plotter.XY{
+					X: 366.0,
+					Y: 7.0,
+				},
+			},
+			fmt.Sprintf("High consistently above 7 after %s %d", firstHighDay.Month().String(), firstHighDay.Day()), plotter.XYs{
+				plotter.XY{
+					X: float64(HighAboveCounts[0].Day),
+					Y: minTemp,
+				},
+				plotter.XY{
+					X: float64(HighAboveCounts[0].Day),
+					Y: maxTemp,
+				},
+			},
+			fmt.Sprintf("Low consistently above 7 after %s %d", firstLowDay.Month().String(), firstLowDay.Day()), plotter.XYs{
+				plotter.XY{
+					X: float64(LowAboveCounts[0].Day),
+					Y: minTemp,
+				},
+				plotter.XY{
+					X: float64(LowAboveCounts[0].Day),
+					Y: maxTemp,
+				},
+			},
 		))
-		// Add a horizontal lines to demarcate 7 & 10 degrees
-		for i, v := range []int{7, 10} {
-			points := make(plotter.XYs, 366)
-			for j := 0; j < 366; j++ {
-				points[j].X = float64(j)
-				points[j].Y = float64(v)
-			}
-			l, err := plotter.NewLine(points)
-			check(err)
-			l.LineStyle.Color = plotutil.SoftColors[i + 2]
-			p.Add(l)
-			p.Legend.Add(strconv.Itoa(v), l)
-		}
 		check(p.Save(PlotWidth, PlotHeight, PlotFile))
 	}
 }
