@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	PlotFile    = "weather.png"
-	PlotWidth   = 16*vg.Inch
-	PlotHeight  = 8*vg.Inch
-	DaysInAYear = 366
+	TireThreshold = 7
+	PlotFile      = "weather.png"
+	PlotWidth     = 16*vg.Inch
+	PlotHeight    = 8*vg.Inch
+	DaysInAYear   = 366
 )
 
 type DailyTemp struct {
@@ -262,7 +263,7 @@ func main() {
 		if yearlyLows[i].Y < minTemp {
 			minTemp = yearlyLows[i].Y
 		}
-		if yearlyHighs[i].Y >= 7.0 {
+		if yearlyHighs[i].Y >= float64(TireThreshold) {
 			if HighCurrentCount.Day == -1 {
 				HighCurrentCount = DayCount{
 					Day: i,
@@ -274,7 +275,7 @@ func main() {
 			HighAboveCounts = append(HighAboveCounts, HighCurrentCount)
 			HighCurrentCount.Day = -1
 		}
-		if yearlyLows[i].Y >= 7.0 {
+		if yearlyLows[i].Y >= float64(TireThreshold) {
 			if LowCurrentCount.Day == -1 {
 				LowCurrentCount = DayCount{
 					Day: i,
@@ -302,7 +303,7 @@ func main() {
 		check(err)
 
 		p.Title.Text = "Waterloo Temperature"
-		p.X.Label.Text = "Day"
+		p.X.Label.Text = " "
 		p.Y.Label.Text = "Temperature (Celsius)"
 		p.X.Tick.Marker = MonthTicks{}
 		p.Y.Tick.Marker = TemperatureTicks{}
@@ -310,17 +311,19 @@ func main() {
 		check(plotutil.AddLinePoints(p,
 			"High", yearlyHighs,
 			"Low", yearlyLows,
-			"7", plotter.XYs{
+			fmt.Sprintf("%d", TireThreshold), plotter.XYs{
 				plotter.XY{
 					X: 0.0,
-					Y: 7.0,
+					Y: float64(TireThreshold),
 				},
 				plotter.XY{
 					X: 366.0,
-					Y: 7.0,
+					Y: float64(TireThreshold),
 				},
 			},
-			fmt.Sprintf("High consistently above 7 after %s %d", firstHighDay.Month().String(), firstHighDay.Day()), plotter.XYs{
+			fmt.Sprintf("High consistently above %d after %s %d",
+				TireThreshold, firstHighDay.Month().String(), firstHighDay.Day()),
+			plotter.XYs{
 				plotter.XY{
 					X: float64(HighAboveCounts[0].Day),
 					Y: minTemp,
@@ -330,7 +333,9 @@ func main() {
 					Y: maxTemp,
 				},
 			},
-			fmt.Sprintf("Low consistently above 7 after %s %d", firstLowDay.Month().String(), firstLowDay.Day()), plotter.XYs{
+			fmt.Sprintf("Low consistently above %d after %s %d",
+				TireThreshold, firstLowDay.Month().String(), firstLowDay.Day()),
+			plotter.XYs{
 				plotter.XY{
 					X: float64(LowAboveCounts[0].Day),
 					Y: minTemp,
